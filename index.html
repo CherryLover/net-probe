@@ -503,8 +503,9 @@ body.no-motion *,body.no-motion *::before,body.no-motion *::after{animation-dura
 /* ---------- 默认配置 ---------- */
 const LS_KEY = 'net-probe:config:v1';
 const HIST_LEN = 14;
+const CONFIG_VERSION = 2;
 const DEFAULTS = {
-  version: 1,
+  version: CONFIG_VERSION,
   interval: 30,
   slowMs: 1000,
   timeoutMs: 8000,
@@ -529,8 +530,7 @@ const DEFAULTS = {
     { id: 's4', name: 'Cloudflare', url: 'https://www.cloudflare.com',          group: '国际' },
     { id: 's5', name: 'YouTube',    url: 'https://www.youtube.com',             group: '国际' },
     { id: 's6', name: '百度',       url: 'https://www.baidu.com',               group: '国内' },
-    { id: 's7', name: '阿里云',     url: 'https://www.aliyun.com',              group: '国内' },
-    { id: 's8', name: '哔哩哔哩',   url: 'https://www.bilibili.com',            group: '国内' }
+    { id: 's7', name: '阿里云',     url: 'https://www.aliyun.com',              group: '国内' }
   ]
 };
 const INTERVALS = [[0, '关闭'], [10, '10 秒'], [30, '30 秒'], [60, '1 分钟'], [300, '5 分钟']];
@@ -658,8 +658,17 @@ function parseEcho(t) {
 
 /* ---------- 配置读写 ---------- */
 function hostOf(u) { try { return new URL(u).host; } catch (e) { return u; } }
+const normUrlKey = (u) => String(u || '').trim().replace(/\/+$/, '').toLowerCase();
+/* 旧配置升级：v1 → v2 去掉旧版默认带的哔哩哔哩（用户自己加的不动） */
+function migrate(c) {
+  if (!c || !Array.isArray(c.sites) || (c.version || 1) >= CONFIG_VERSION) return c;
+  const sites = c.sites.filter((s) => !(s.id === 's8' && /bilibili\.com/.test(s.url || '')));
+  return Object.assign({}, c, { sites, version: CONFIG_VERSION });
+}
 function normalize(c) {
+  c = migrate(c);
   const out = Object.assign(clone(DEFAULTS), c || {});
+  out.version = CONFIG_VERSION;
   if (!Array.isArray(out.sites)) out.sites = clone(DEFAULTS.sites);
   if (!Array.isArray(out.ipSources) || !out.ipSources.length) out.ipSources = clone(DEFAULTS.ipSources);
   out.sites = out.sites.filter((s) => s && s.url).map((s) => ({
@@ -1837,6 +1846,20 @@ $('fileImport').addEventListener('change', async (e) => {
   try {
     const data = JSON.parse(await f.text());
     if (!data || !Array.isArray(data.sites)) throw new Error('缺少 sites');
+    if (data.merge === true) {
+      // 合并导入：只把新站点插到最前面，已有同网址的跳过，其他设置都不动
+      const have = new Set(cfg.sites.map((s) => normUrlKey(s.url)));
+      const add = normalize({ sites: data.sites }).sites
+        .filter((s) => !have.has(normUrlKey(s.url)))
+        .map((s) => Object.assign(s, { id: cfg.sites.some((x) => x.id === s.id) ? uid() : s.id }));
+      if (!add.length) { toast('文件里的站点都已经在列表里了'); return; }
+      cfg.sites = add.concat(cfg.sites);
+      state.tab = '全部';
+      save(); renderTabs(); renderSites(true); refreshHist(false);
+      toast('已合并 ' + add.length + ' 个站点' + (data.sites.length > add.length ? '，跳过 ' + (data.sites.length - add.length) + ' 个重复的' : ''));
+      checkSites(add.map((s) => s.id)).then(() => refreshHist(false));
+      return;
+    }
     let histMsg = '';
     if (data.history && DB.db && confirm('文件里带有历史记录，要用它替换本机的历史吗？\n选「取消」则只导入站点和设置。')) {
       await DB.restore(data.history);

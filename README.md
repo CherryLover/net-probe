@@ -120,4 +120,20 @@ python3 -m http.server 8080
 - `theme` 可选 `system` / `light` / `dark`；只有 `themeSet` 为 `true` 时才使用 `theme` 的值，否则一律跟随系统。
 - 勾选「导出时包含历史数据」后，导出的文件会多一个 `history` 字段；导入这样的文件时会询问是否用它替换本机历史。
 
+### 合并导入：分享一份站点清单
+
+普通导入会**整体替换**本机配置。如果只是想把一批站点加进去，比如团队内部的服务清单，可以在文件里加上 `"merge": true`：
+
+```json
+{
+  "merge": true,
+  "sites": [
+    { "name": "订单服务", "url": "https://order.example.com/health", "group": "内部服务" },
+    { "name": "管理后台", "url": "https://admin.example.com", "group": "内部服务" }
+  ]
+}
+```
+
+导入时这些站点会插到列表最前面，网址已经存在的会跳过，其他站点和设置都不受影响。内部地址不适合放进公开仓库，建议用这种文件在团队里单独传。
+
 默认的第三方检测源（ipip.net、ip.sb、Cloudflare）是否允许跨域、能否访问，取决于对方服务和你所在的网络。哪个用不了，在设置里换掉就行。
